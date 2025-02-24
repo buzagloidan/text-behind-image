@@ -1,36 +1,39 @@
-import { stripe } from "@/lib/stripe";
+import { createCheckoutSession } from '@/lib/lemon-squeezy';
+import { NextResponse } from 'next/server';
 
-export async function POST(req: Request, res: Response) {
+export async function POST(req: Request) {
     try {
+        console.log('Received checkout request');
         const body = await req.json();
-        const { user_id, email, plan_name } = body;
+        console.log('Request body:', body);
 
-        let session = await stripe.checkout.sessions.create({
-                customer_email: email,
-                line_items: [ 
-                    {
-                        price_data: {
-                            currency: 'usd',
-                            product_data: {
-                                name: plan_name
-                            },
-                            recurring: {
-                                interval: 'month'
-                            },
-                            unit_amount: 4 * 100,
-                        },
-                        quantity: 1,
-                    },
-                ],
-                metadata: {
-                    user_id: user_id
-                },
-                mode: 'subscription',
-                success_url: `http://textbehindimage.rexanwong.xyz/app`,
+        const { user_id, email } = body;
+        console.log('Extracted data:', { user_id, email });
+
+        if (!user_id || !email) {
+            console.log('Missing required fields');
+            return NextResponse.json(
+                { error: 'Missing required fields: user_id and email are required' },
+                { status: 400 }
+            );
+        }
+
+        console.log('Creating checkout session with:', { email, user_id });
+        const checkoutUrl = await createCheckoutSession(email, user_id);
+        console.log('Received checkout URL:', checkoutUrl);
+        
+        return NextResponse.json({ paymentLink: checkoutUrl });
+    } catch (error: any) {
+        console.error('Route handler error:', {
+            message: error.message,
+            response: error.response?.data,
+            stack: error.stack
         });
-
-        return Response.json({ paymentLink: session.url });
-    } catch (error) {
-        return Response.json({ error: error });
+        return NextResponse.json(
+            { 
+                error: error.response?.data?.errors?.[0]?.detail || error.message || 'Failed to create checkout session'
+            },
+            { status: error.response?.status || 500 }
+        );
     }
 }

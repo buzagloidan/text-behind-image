@@ -42,15 +42,33 @@ const PlanCard: React.FC<Plan> = ({ userDetails, userEmail, title, description, 
     const handleDirectToPaymentLink = async () => {
         setLoading(true); 
         try {
+            console.log('Creating checkout session for:', {
+                user_id: userDetails.id,
+                email: userEmail,
+                plan_name: "Text Behind Image Pro Plan",
+            });
+
             const response = await axios.post('/api/create-checkout-session', {
                 user_id: userDetails.id,
                 email: userEmail,
                 plan_name: "Text Behind Image Pro Plan",
             });
 
-            router.push(response.data.paymentLink);
-        } catch (error) {
+            console.log('Checkout session response:', response.data);
 
+            if (response.data.paymentLink) {
+                console.log('Redirecting to payment link:', response.data.paymentLink);
+                router.push(response.data.paymentLink);
+            } else {
+                throw new Error('No payment link received from server');
+            }
+        } catch (error: any) {
+            console.error('Error creating checkout session:', error);
+            toast({
+                title: "Error creating checkout session",
+                description: error.response?.data?.error || error.message || "Please try again later",
+                variant: "destructive",
+            });
         } finally {
             setLoading(false);   
         }

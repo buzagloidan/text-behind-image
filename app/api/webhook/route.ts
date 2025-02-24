@@ -1,79 +1,45 @@
-import type { Stripe } from "stripe";
+import { createClient } from '@supabase/supabase-js';
 
-import { NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '', 
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function POST(req: Request) {
-  let event: Stripe.Event;
-
   try {
-    event = stripe.webhooks.constructEvent(
-      await (await req.blob()).text(),
-      req.headers.get("stripe-signature") as string,
-      process.env.STRIPE_WEBHOOK_SECRET as string,
-    );
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    if (err! instanceof Error) console.log(err);
-    console.log(`❌ Error message: ${errorMessage}`);
-    return NextResponse.json(
-      { message: `Webhook Error: ${errorMessage}` },
-      { status: 400 },
-    );
-  }
-  
-  const permittedEvents: string[] = [
-    "checkout.session.completed",
-    "payment_intent.succeeded",
-    "payment_intent.payment_failed",
-  ];
-
-  if (permittedEvents.includes(event.type)) {
-    let stripeData;
-    let success = false
-
-    try {
-      switch (event.type) {
-        case "checkout.session.completed":
-          stripeData = event.data.object as Stripe.Checkout.Session;
-          success = true
-          break;
-        case "payment_intent.payment_failed":
-          stripeData = event.data.object as Stripe.PaymentIntent;
-          break;
-        case "payment_intent.succeeded":
-          stripeData = event.data.object as Stripe.PaymentIntent;
-          break;
-        default:
-          throw new Error(`Unhandled event: ${event.type}`);
-      }
-
-      if (success) {
-        const stripeDataJSON = JSON.parse(JSON.stringify(stripeData));
-        console.log(stripeDataJSON)
-
-        await supabaseAdmin
-          .from('profiles') 
-          .update({  
+    const body = await req.json();
+    
+    // Handle Lemon Squeezy webhook events
+    const eventName = body.meta.event_name;
+    const data = body.data;
+    
+    switch (eventName) {
+      case 'subscription_created':
+        // Update user profile when subscription is created
+        await supabase
+          .from('profiles')
+          .update({
             paid: true,
-            subscription_id: stripeDataJSON.subscription
-          })    
-          .eq('id', stripeDataJSON.metadata.user_id)
-      }
-    } catch (error) {  
-      console.log(error);
-      return NextResponse.json(
-        { message: "Webhook handler failed" },
-        { status: 500 },
-      );
-    }  
-  }
+            subscription_id: data.id
+          })
+          .eq('id', data.attributes.custom_data.user_id);
+        break;
+        
+      case 'subscription_cancelled':
+        // Update user profile when subscription is cancelled
+        await supabase
+          .from('profiles')
+          .update({
+            paid: false,
+            subscription_id: null
+          })
+          .eq('id', data.attributes.custom_data.user_id);
+        break;
+    }
 
-  return NextResponse.json({ message: "Received" }, { status: 200 });
+    return new Response(null, { status: 200 });
+  } catch (error) {
+    console.error('Error handling webhook:', error);
+    return new Response('Webhook error', { status: 400 });
+  }
 }

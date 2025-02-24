@@ -16,7 +16,7 @@ const Authenticate = () => {
                 access_type: 'offline',
                 prompt: 'consent',
             },
-            redirectTo: 'https://textbehindimage.rexanwong.xyz/app'
+            redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/app` : 'http://localhost:3000/app'
         },
     })
 
